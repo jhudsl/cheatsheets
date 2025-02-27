@@ -53,12 +53,27 @@ jobs:
 
       # We want a fresh run of the renders each time - so first delete old html files
       - name: Delete old *.html
-        run: Rscript -e "rmarkdown::clean_site(preview = FALSE)"
+        run: |
+          sudo apt-get update && apt-get install -y
+          sudo apt-get install google-chrome -y
+          Rscript -e "rmarkdown::clean_site(preview = FALSE)"
 
        # Now we want to render all the html files from the Rmd files
       - name: Run render html
         id: site
-        run: Rscript -e "rmarkdown::render_site()"
+        run: |
+          install.packages("pagedown", repos='http://cran.us.r-project.org')
+          Sys.setenv("CHROMOTE_CHROME" = pagedown::find_chrome()[1])
+          rmarkdown::render_site()
+          dir.create("pngs", showWarnings = FALSE)
+          rmds <- list.files(pattern = "\\.Rmd$")
+          rmd_df <- data.frame(rmd = rmds,
+                               png = file.path("pngs", gsub("\\.Rmd$", ".png", rmds))
+                               )
+          purrr::pmap(rmd_df, function(rmd, png) {
+                 webshot2::rmdshot(rmd, file = png)
+               })
+        shell: Rscript {0}
 
 
       # This checks on the steps before it and makes sure that they completed.
@@ -77,6 +92,7 @@ jobs:
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add --force docs/*
+          git add --force pdfs/*
           git commit -m 'Render site' || echo "No changes to commit"
           git reset --hard HEAD
           git pull --rebase --allow-unrelated-histories --strategy-option=ours
